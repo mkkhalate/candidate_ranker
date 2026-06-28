@@ -164,7 +164,7 @@ def step5_xgboost(
     all_ids: List[str],
 ) -> List[Tuple[str, float, Dict]]:
     print(f"\n{'='*60}", flush=True)
-    log("STEP 5", "XGBOOST SCORING — Final ranking (Top-200 → Top-100)")
+    log("STEP 5", "DETERMINISTIC SCORING — Final ranking (Top-200 → Top-100)")
     print(f"{'='*60}\n", flush=True)
 
     id_to_idx = {cid: i for i, cid in enumerate(all_ids)}

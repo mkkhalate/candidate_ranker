@@ -1,6 +1,6 @@
 """
 explainer.py — Generates per-candidate strengths/weaknesses via feature contributions.
-Now includes specific skills, company, title, and JD‑aligned signals.
+Now includes specific skills, company, title, and JD-aligned signals.
 """
 
 import numpy as np
@@ -37,13 +37,19 @@ FEATURE_LABELS = {
     "title_seniority": "seniority level",
     "verified_skill_score": "verified skill assessments",
     "role_experience_alignment": "title vs skill alignment",
-    # New labels
+    # JD-aligned labels
     "is_india_based": "India-based",
     "is_big_tech": "currently at Big Tech",
     "is_consulting": "currently at consulting firm",
     "has_product_company_experience": "product-company experience",
     "ranking_evidence_score": "evidence of ranking system work",
     "has_shipped_ranking_system": "shipped ranking/search system",
+    # NEW
+    "external_validation_score": "external validation (papers, talks, open-source)",
+    "eval_framework_experience": "evaluation framework experience (NDCG, MRR, A/B tests)",
+    "is_title_chaser": "title-chaser pattern (red flag)",
+    "is_framework_enthusiast": "framework enthusiast (red flag)",
+    "is_cv_speech_primary": "CV/speech primary without NLP/IR (red flag)",
 }
 
 NEGATIVE_FEATURES = {
@@ -52,15 +58,19 @@ NEGATIVE_FEATURES = {
     "honeypot_flag_count",
     "notice_period_days",
     "beginner_skill_count",
-    "is_big_tech",
     "is_consulting",
+    "is_title_chaser",           # NEW
+    "is_framework_enthusiast",   # NEW
+    "is_cv_speech_primary",      # NEW
+    # is_big_tech deliberately excluded
 }
 
 
 def _feature_value_str(feature_name: str, value: float) -> str:
     if feature_name == "notice_period_days":
         return f"{int(value)}-day notice period"
-    if feature_name in ("cross_encoder_score", "response_rate", "profile_completeness", "verified_skill_score"):
+    if feature_name in ("cross_encoder_score", "response_rate", "profile_completeness", "verified_skill_score",
+                        "external_validation_score"):
         return f"{value:.2f}"
     if feature_name in ("total_experience_years", "avg_tenure_per_job"):
         return f"{value:.1f} years"
@@ -88,6 +98,14 @@ def _feature_value_str(feature_name: str, value: float) -> str:
         return "shipped ranking/search system" if value > 0 else ""
     if feature_name == "ranking_evidence_score":
         return f"ranking evidence {value:.2f}"
+    if feature_name == "eval_framework_experience":
+        return "evaluation framework experience" if value > 0 else ""
+    if feature_name == "is_title_chaser":
+        return "title-chaser pattern (penalty)" if value > 0 else ""
+    if feature_name == "is_framework_enthusiast":
+        return "framework enthusiast (penalty)" if value > 0 else ""
+    if feature_name == "is_cv_speech_primary":
+        return "CV/speech primary without NLP/IR (penalty)" if value > 0 else ""
     return f"{value:.2f}"
 
 
@@ -129,8 +147,8 @@ def generate_reasoning(
         profile = candidate_profile.get("profile", {})
         title = profile.get("current_title", "")
         company = profile.get("current_company", "")
-    
-    # Start with a strong opening
+
+    # Opening: title + company
     if title and company:
         parts.append(f"{title} at {company}")
     elif title:
@@ -152,7 +170,7 @@ def generate_reasoning(
         if exp_cnt > 0 or adv_cnt > 0:
             parts.append(f"{exp_cnt + adv_cnt} expert/advanced skills")
 
-    # New JD-aligned evidence
+    # JD-aligned evidence: ranking system shipping
     if features.get("has_shipped_ranking_system", 0) > 0:
         parts.append("shipped a ranking/search system")
     elif features.get("ranking_evidence_score", 0) > 0.3:
@@ -161,6 +179,10 @@ def generate_reasoning(
     # Product-company experience
     if features.get("has_product_company_experience", 0) > 0:
         parts.append("product-company experience")
+
+    # External validation
+    if features.get("external_validation_score", 0) > 0.5:
+        parts.append("has external validation (papers/talks/open-source)")
 
     # Feature contributions (top positives)
     if contribs is not None and len(contribs) == len(feature_names):
@@ -184,7 +206,7 @@ def generate_reasoning(
         if val_str:
             parts.append(f"boosted by {val_str} ({label})")
 
-    # Experience
+    # Experience years
     exp_yrs = features.get("total_experience_years", 0.0)
     if exp_yrs > 0 and "total_experience_years" not in [p[0] for p in positive[:2]]:
         parts.append(f"{exp_yrs:.1f} years of experience")
@@ -197,14 +219,14 @@ def generate_reasoning(
         tier_str = " (Tier 1)" if edu_tier >= 0.9 else ""
         parts.append(f"{level_str} degree{tier_str}")
 
-    # Role alignment flag
+    # Role alignment
     role_match = features.get("role_experience_alignment", 0.5)
     if role_match < 0.3:
         parts.append("Warning: title may not align with technical skills")
     elif role_match >= 0.8:
         parts.append("strong title-skill alignment")
 
-    # Concerns
+    # Concerns / penalties
     concern_parts = []
     negative = [
         (k, v, features.get(k, 0.0))
@@ -213,7 +235,7 @@ def generate_reasoning(
     ]
     negative.sort(key=lambda x: abs(x[1]), reverse=True)
 
-    for feat_name, _, feat_val in negative[:2]:
+    for feat_name, _, feat_val in negative[:3]:  # include more items
         if feat_name == "notice_period_days" and feat_val > 30:
             concern_parts.append(f"{int(feat_val)}-day notice period")
         elif feat_name == "expert_skill_zero_years_count" and feat_val > 0:
@@ -222,10 +244,17 @@ def generate_reasoning(
             concern_parts.append(f"{int(feat_val)} integrity flag(s) detected")
         elif feat_name == "company_age_anomaly" and feat_val > 0:
             concern_parts.append("experience timeline anomaly detected")
-        elif feat_name == "is_big_tech" and feat_val > 0:
-            concern_parts.append("currently at Big Tech (may not fit scrappy culture)")
         elif feat_name == "is_consulting" and feat_val > 0:
-            concern_parts.append("currently at consulting firm (risk of culture mismatch)")
+            if features.get("has_product_company_experience", 0) > 0:
+                concern_parts.append("currently at consulting firm (pardoned with product exp)")
+            else:
+                concern_parts.append("currently at consulting firm (penalty applied)")
+        elif feat_name == "is_title_chaser" and feat_val > 0:
+            concern_parts.append("title-chaser pattern detected (penalty)")
+        elif feat_name == "is_framework_enthusiast" and feat_val > 0:
+            concern_parts.append("framework enthusiast (penalty)")
+        elif feat_name == "is_cv_speech_primary" and feat_val > 0:
+            concern_parts.append("CV/speech primary without NLP/IR (penalty)")
 
     if concern_parts:
         parts.append("Concern: " + "; ".join(concern_parts))

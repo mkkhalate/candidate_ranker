@@ -27,8 +27,7 @@ def load_job_description(input_dir: str) -> str:
     plain = _strip_markdown(raw)
     word_count = len(plain.split())
     log("LOADER", f"Job description loaded — {word_count} words after markdown stripping")
-    
-    # --- FIX: Validate that we actually got text ---
+
     if len(plain.strip()) < 200:
         raise ValueError(
             f"Job description text is too short ({len(plain)} characters). "

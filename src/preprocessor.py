@@ -1,9 +1,6 @@
 """
-preprocessor.py — Builds text blobs and extracts 30+ structural features.
-Now includes:
-  - is_india_based, is_big_tech, is_consulting
-  - has_product_company_experience
-  - ranking_evidence_score, has_shipped_ranking_system
+preprocessor.py — Builds text blobs and extracts 35+ structural features.
+Now includes external_validation_score and eval_framework_experience.
 """
 
 import re
@@ -26,7 +23,10 @@ PRODUCTION_KEYWORDS_MEDIUM = {
     "developed", "created", "established",
 }
 
-LOCATION_BOOST_CITIES = {"pune", "noida", "bangalore", "bengaluru", "hyderabad", "chennai"}
+LOCATION_BOOST_CITIES = {
+    "pune", "noida", "bangalore", "bengaluru", "hyderabad",
+    "chennai", "mumbai", "delhi", "delhi ncr", "gurugram", "gurgaon",
+}
 
 SENIORITY_KEYWORDS = {
     "staff": 5, "principal": 5, "distinguished": 5, "fellow": 5,
@@ -34,7 +34,6 @@ SENIORITY_KEYWORDS = {
     "mid": 2, "junior": 1, "jr.": 1, "jr ": 1, "associate": 1, "trainee": 1, "intern": 0,
 }
 
-# Degree normalisation
 _DEGREE_MAP: List[Tuple[int, List[str]]] = [
     (4, ["phd", "ph d", "doctorate", "doctor of"]),
     (3, ["mtech", "m tech", "me ", "m e ", "ms ", "m s ", "msc", "m sc", "mba",
@@ -53,27 +52,73 @@ HANDS_ON_KEYWORDS = {
     "implemented", "coded", "debugged", "repository", "pipeline", "api", "sdk",
 }
 
-# ---- New JD-aligned constants ----
 BIG_TECH_KEYWORDS = {
     "google", "meta", "facebook", "microsoft", "amazon", "apple", "netflix",
-    "linkedin", "uber", "airbnb", "salesforce", "adobe", "oracle", "ibm"
+    "linkedin", "uber", "airbnb", "salesforce", "adobe", "oracle", "ibm",
 }
+
 CONSULTING_KEYWORDS = {
     "tcs", "infosys", "wipro", "accenture", "cognizant", "capgemini",
-    "hcl", "tech mahindra", "lti", "mphasis", "hexaware", "virtusa"
+    "hcl", "tech mahindra", "lti", "mphasis", "hexaware", "virtusa",
 }
+
+CV_SPEECH_ROBOTICS_KEYWORDS = {
+    "computer vision", "image classification", "object detection", "image segmentation",
+    "image recognition", "image generation", "cnn", "convolutional neural network",
+    "yolo", "detectron", "opencv", "face recognition", "facial recognition",
+    "pose estimation", "scene understanding", "depth estimation", "stereo vision",
+    "speech recognition", "asr", "automatic speech recognition", "tts", "text to speech",
+    "text-to-speech", "voice recognition", "speech synthesis", "acoustic model",
+    "waveform", "whisper", "speech processing", "speaker diarization",
+    "robotics", "ros", "slam", "path planning", "autonomous driving",
+    "lidar", "point cloud", "motion planning",
+}
+
+NLP_IR_CORE_KEYWORDS = {
+    "nlp", "natural language processing", "natural language", "ranking", "search",
+    "recommendation", "retrieval", "embedding", "transformers", "bert", "gpt", "llm",
+    "large language model", "language model", "text classification", "ner",
+    "named entity", "sentiment", "information retrieval", "vector search",
+    "semantic search", "faiss", "elasticsearch", "opensearch", "solr", "lucene",
+    "question answering", "summarization", "reranking", "re-ranking",
+    "cross-encoder", "bi-encoder", "dense retrieval",
+}
+
+FRAMEWORK_ONLY_KEYWORDS = {
+    "langchain", "llamaindex", "llama_index", "llama index", "haystack", "flowise",
+    "autogen", "agentgpt", "crewai", "crew ai", "dspy",
+}
+
+UNDERLYING_ML_KEYWORDS = {
+    "pytorch", "tensorflow", "jax", "scikit-learn", "sklearn", "xgboost", "lightgbm",
+    "hugging face", "huggingface", "fine-tun", "fine tuning", "finetuning",
+    "model training", "training loop", "gradient descent", "backpropagation",
+    "pre-training", "pretraining", "custom model", "loss function", "optimizer",
+    "neural network architecture", "deep learning framework",
+}
+
 RANKING_EVIDENCE_KEYWORDS = {
     "ranking", "retrieval", "search", "recommendation", "relevance",
     "ndcg", "mrr", "map", "learning to rank", "ltr", "evaluation",
-    "offline evaluation", "online ab test", "ab test"
+    "offline evaluation", "online ab test", "ab test",
 }
 SHIP_EVIDENCE_KEYWORDS = {
     "shipped", "built", "owned", "led", "deployed", "launched", "scaled",
-    "production", "real users", "production system"
+    "production", "real users", "production system",
+}
+
+# ---- NEW: external validation and evaluation framework keywords ----
+EXTERNAL_VALIDATION_KEYWORDS = {
+    "publication", "conference", "paper", "talk", "open-source", "github stars",
+    "open source", "presented", "keynote", "workshop", "tutorial", "blog post",
+}
+EVAL_FRAMEWORK_KEYWORDS = {
+    "ndcg", "mrr", "map", "offline evaluation", "online ab test", "a/b test",
+    "ab testing", "evaluation framework", "offline-to-online correlation",
 }
 
 # ---------------------------------------------------------------------------
-# Degree parsing
+# Helper functions (unchanged)
 # ---------------------------------------------------------------------------
 
 def _parse_degree_level(raw_degree: str) -> int:
@@ -88,15 +133,9 @@ def _parse_degree_level(raw_degree: str) -> int:
                 return level
     return 0
 
-
 def _parse_institution_tier(edu_dict: Dict) -> float:
     tier = str(edu_dict.get("tier", "")).lower().strip()
     return TIER_SCORES.get(tier, 0.25)
-
-
-# ---------------------------------------------------------------------------
-# Date parsing
-# ---------------------------------------------------------------------------
 
 def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
     if not date_str:
@@ -113,11 +152,6 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
         except ValueError:
             pass
     return None
-
-
-# ---------------------------------------------------------------------------
-# Experience computation
-# ---------------------------------------------------------------------------
 
 def _compute_experience_years(employer_history: List[Dict]) -> Tuple[float, float, float, float]:
     if not employer_history:
@@ -174,11 +208,6 @@ def _compute_experience_years(employer_history: List[Dict]) -> Tuple[float, floa
 
     return round(total, 2), round(avg, 2), round(stddev, 2), round(density, 4)
 
-
-# ---------------------------------------------------------------------------
-# Skill analysis
-# ---------------------------------------------------------------------------
-
 def _analyse_skills(skills: List) -> Dict[str, Any]:
     expert_count = 0
     advanced_count = 0
@@ -223,11 +252,6 @@ def _analyse_skills(skills: List) -> Dict[str, Any]:
         "total_skills": expert_count + advanced_count + intermediate_count + beginner_count,
     }
 
-
-# ---------------------------------------------------------------------------
-# Integrity checks
-# ---------------------------------------------------------------------------
-
 def _company_age_anomaly(employer_history: List[Dict]) -> int:
     now_year = datetime.now().year
     for job in employer_history:
@@ -244,7 +268,6 @@ def _company_age_anomaly(employer_history: List[Dict]) -> int:
             except (ValueError, TypeError):
                 pass
     return 0
-
 
 def _has_github_link(candidate: Dict[str, Any]) -> int:
     profile = candidate.get("profile", {}) or {}
@@ -266,17 +289,11 @@ def _has_github_link(candidate: Dict[str, Any]) -> int:
             pass
     return 0
 
-
 def _get_signal(signals: Dict, key: str, default: Any = 0) -> Any:
     if not signals:
         return default
     val = signals.get(key, default)
     return val if val is not None else default
-
-
-# ---------------------------------------------------------------------------
-# Location
-# ---------------------------------------------------------------------------
 
 def _is_target_location(profile: Dict[str, Any], signals: Dict[str, Any]) -> int:
     location = str(profile.get("location", "") or "").lower()
@@ -294,11 +311,6 @@ def _is_target_location(profile: Dict[str, Any], signals: Dict[str, Any]) -> int
                 return 1
     return 0
 
-
-# ---------------------------------------------------------------------------
-# Production evidence
-# ---------------------------------------------------------------------------
-
 def _production_evidence_score(text_blob: str) -> float:
     lower = text_blob.lower()
     score = 0.0
@@ -310,11 +322,6 @@ def _production_evidence_score(text_blob: str) -> float:
             score += 0.15
     return min(1.0, score)
 
-
-# ---------------------------------------------------------------------------
-# Seniority
-# ---------------------------------------------------------------------------
-
 def _title_seniority(title: str) -> int:
     if not title:
         return 2
@@ -324,11 +331,6 @@ def _title_seniority(title: str) -> int:
             return level
     return 2
 
-
-# ---------------------------------------------------------------------------
-# Skill assessment
-# ---------------------------------------------------------------------------
-
 def _skill_assessment_score(signals: Dict) -> float:
     assessments = signals.get("skill_assessment_scores", {})
     if not assessments or not isinstance(assessments, dict):
@@ -337,11 +339,6 @@ def _skill_assessment_score(signals: Dict) -> float:
     if not scores:
         return 0.0
     return round(sum(scores) / len(scores) / 100.0, 4)
-
-
-# ---------------------------------------------------------------------------
-# Title vs Skill Mismatch
-# ---------------------------------------------------------------------------
 
 def _role_experience_alignment(title: str, skills: List) -> float:
     if not title or not skills:
@@ -361,17 +358,11 @@ def _role_experience_alignment(title: str, skills: List) -> float:
         return 1.0
     return 0.5
 
-
-# ---------------------------------------------------------------------------
-# NEW: Company-type helpers (Big Tech, Consulting, Product experience)
-# ---------------------------------------------------------------------------
-
 def _is_big_tech(company: str) -> int:
     if not company:
         return 0
     c = company.lower()
     return 1 if any(kw in c for kw in BIG_TECH_KEYWORDS) else 0
-
 
 def _is_consulting(company: str) -> int:
     if not company:
@@ -379,11 +370,7 @@ def _is_consulting(company: str) -> int:
     c = company.lower()
     return 1 if any(kw in c for kw in CONSULTING_KEYWORDS) else 0
 
-
 def _has_product_company_experience(employer_history: List[Dict]) -> int:
-    """
-    Returns 1 if the candidate has at least one job at a non‑consulting, non‑big‑tech product company.
-    """
     for job in employer_history:
         company = job.get("company", "")
         if not company:
@@ -395,12 +382,7 @@ def _has_product_company_experience(employer_history: List[Dict]) -> int:
             return 1
     return 0
 
-
 def _ranking_evidence_score(employer_history: List[Dict]) -> float:
-    """
-    Score based on how strongly the candidate's job descriptions mention
-    ranking/search/recommendation systems and production shipping.
-    """
     score = 0.0
     for job in employer_history:
         desc = job.get("description", "").lower()
@@ -410,11 +392,7 @@ def _ranking_evidence_score(employer_history: List[Dict]) -> float:
         score += job_score
     return min(1.0, score)
 
-
 def _has_shipped_ranking_system(employer_history: List[Dict]) -> int:
-    """
-    Returns 1 if any job description contains both ranking/search terms AND shipping terms.
-    """
     for job in employer_history:
         desc = job.get("description", "").lower()
         has_rank = any(kw in desc for kw in RANKING_EVIDENCE_KEYWORDS)
@@ -423,9 +401,67 @@ def _has_shipped_ranking_system(employer_history: List[Dict]) -> int:
             return 1
     return 0
 
+def _is_cv_speech_primary(skills: List) -> int:
+    if not skills:
+        return 0
+    cv_count = 0
+    nlp_count = 0
+    total_senior = 0
+    for s in skills:
+        if not isinstance(s, dict):
+            continue
+        prof = str(s.get("proficiency", "")).lower()
+        if prof not in ("expert", "advanced"):
+            continue
+        name = str(s.get("name", "")).lower()
+        total_senior += 1
+        if any(kw in name for kw in CV_SPEECH_ROBOTICS_KEYWORDS):
+            cv_count += 1
+        if any(kw in name for kw in NLP_IR_CORE_KEYWORDS):
+            nlp_count += 1
+    if total_senior < 2:
+        return 0
+    cv_ratio = cv_count / total_senior
+    return 1 if (cv_ratio > 0.40 and nlp_count < 2) else 0
+
+def _is_framework_enthusiast(skills: List, employer_history: List[Dict]) -> int:
+    has_framework = False
+    has_underlying = False
+    for s in skills:
+        if not isinstance(s, dict):
+            continue
+        name = str(s.get("name", "")).lower()
+        if any(kw in name for kw in FRAMEWORK_ONLY_KEYWORDS):
+            has_framework = True
+        if any(kw in name for kw in UNDERLYING_ML_KEYWORDS):
+            has_underlying = True
+    if not has_underlying:
+        for job in employer_history:
+            desc = job.get("description", "").lower()
+            if any(kw in desc for kw in UNDERLYING_ML_KEYWORDS):
+                has_underlying = True
+                break
+    return 1 if (has_framework and not has_underlying) else 0
+
+def _is_title_chaser(employer_history: List[Dict], avg_tenure: float) -> int:
+    if len(employer_history) < 3:
+        return 0
+    return 1 if avg_tenure < 1.5 else 0
+
+# ---- NEW helper functions ----
+def _external_validation_score(text_blob: str, profile: Dict) -> float:
+    text = (text_blob + " " + profile.get("summary", "")).lower()
+    count = sum(1 for kw in EXTERNAL_VALIDATION_KEYWORDS if kw in text)
+    if "github star" in text or "stars" in text:
+        count += 1
+    return min(1.0, count / 3.0)
+
+def _eval_framework_experience(text_blob: str) -> int:
+    text = text_blob.lower()
+    return 1 if any(kw in text for kw in EVAL_FRAMEWORK_KEYWORDS) else 0
 
 # ---------------------------------------------------------------------------
-# Text blob
+# Text blob builder (unchanged)
 # ---------------------------------------------------------------------------
 
 def build_text_blob(candidate: Dict[str, Any], max_words: int = 600) -> str:
@@ -497,9 +533,8 @@ def build_text_blob(candidate: Dict[str, Any], max_words: int = 600) -> str:
         blob = " ".join(words[:max_words])
     return blob.strip()
 
-
 # ---------------------------------------------------------------------------
-# Feature extraction
+# Feature extraction (including new features)
 # ---------------------------------------------------------------------------
 
 def extract_features(
@@ -517,7 +552,7 @@ def extract_features(
     if not isinstance(signals, dict):
         signals = {}
 
-    # --- Experience ---
+    # Experience
     total_exp, avg_tenure, tenure_stddev, desc_density = _compute_experience_years(employer_history)
     reported_exp = profile.get("years_of_experience")
     if reported_exp is not None:
@@ -528,14 +563,14 @@ def extract_features(
         except (TypeError, ValueError):
             pass
 
-    # --- Skills ---
+    # Skills
     skill_stats = _analyse_skills(skills)
 
-    # --- Integrity signals ---
+    # Integrity
     company_anomaly = _company_age_anomaly(employer_history)
     has_github = _has_github_link(candidate)
 
-    # --- Recruiter / engagement signals ---
+    # Recruiter signals
     response_rate = float(_get_signal(signals, "recruiter_response_rate",
                                       _get_signal(signals, "response_rate", 0.0)))
     notice_raw = _get_signal(signals, "notice_period_days", 30)
@@ -543,14 +578,12 @@ def extract_features(
         notice_period = float(notice_raw)
     except (TypeError, ValueError):
         notice_period = 30.0
-
     open_to_work = float(bool(_get_signal(signals, "open_to_work_flag",
                                           _get_signal(signals, "open_to_work", False))))
     profile_completeness = float(_get_signal(signals, "profile_completeness_score",
                                              _get_signal(signals, "profile_completeness", 50.0)))
     if profile_completeness > 1.0:
         profile_completeness /= 100.0
-
     endorsements = float(_get_signal(signals, "endorsements_received",
                                      _get_signal(signals, "endorsement_count", 0)))
     interview_completion = float(_get_signal(signals, "interview_completion_rate", 0.0))
@@ -560,13 +593,13 @@ def extract_features(
     if interview_completion < 0:
         interview_completion = 0.0
 
-    # --- Location ---
+    # Location
     is_target_loc = _is_target_location(profile, signals)
 
-    # --- Production evidence ---
+    # Production
     prod_score = _production_evidence_score(text_blob)
 
-    # --- Education ---
+    # Education
     edu_level = 0
     best_tier_score = 0.0
     for edu in education:
@@ -578,15 +611,13 @@ def extract_features(
         tier_s = _parse_institution_tier(edu)
         best_tier_score = max(best_tier_score, tier_s)
 
-    # --- Seniority ---
+    # Seniority & role alignment
     current_title = profile.get("current_title") or candidate.get("current_title", "")
     title_seniority = _title_seniority(current_title)
     role_match = _role_experience_alignment(current_title, skills)
-
-    # --- Skill assessment ---
     verified_skill_score = _skill_assessment_score(signals)
 
-    # --- Honeypot ---
+    # Honeypot
     es = skill_stats
     total_skills = es["total_skills"]
     expert_zero = es["expert_zero_years_count"]
@@ -595,10 +626,9 @@ def extract_features(
 
     jobs_count = len(employer_history)
 
-    # --- NEW: JD‑aligned features ---
+    # JD-aligned company features
     country = profile.get("country", "").lower()
     is_india = 1.0 if country == "india" else 0.0
-
     current_company = profile.get("current_company", "")
     is_big_tech = float(_is_big_tech(current_company))
     is_consulting = float(_is_consulting(current_company))
@@ -606,15 +636,22 @@ def extract_features(
     ranking_evidence = _ranking_evidence_score(employer_history)
     has_shipped_ranking = float(_has_shipped_ranking_system(employer_history))
 
+    # Disqualifier flags
+    is_cv_speech_primary = float(_is_cv_speech_primary(skills))
+    is_framework_enthusiast = float(_is_framework_enthusiast(skills, employer_history))
+    is_title_chaser = float(_is_title_chaser(employer_history, avg_tenure))
+
+    # NEW features
+    external_val = _external_validation_score(text_blob, profile)
+    eval_framework = float(_eval_framework_experience(text_blob))
+
     return {
-        # Experience
         "total_experience_years": float(total_exp),
         "avg_tenure_per_job": float(avg_tenure),
         "tenure_stddev": float(tenure_stddev),
         "jobs_count": float(jobs_count),
         "career_description_density": float(desc_density),
 
-        # Skills
         "expert_skill_count": float(es["expert_count"]),
         "advanced_skill_count": float(es["advanced_count"]),
         "intermediate_skill_count": float(es["intermediate_count"]),
@@ -622,12 +659,10 @@ def extract_features(
         "total_skill_score": float(es["total_skill_score"]),
         "total_skills": float(total_skills),
 
-        # Integrity
         "expert_skill_zero_years_count": float(es["expert_zero_years_count"]),
         "company_age_anomaly": float(company_anomaly),
         "honeypot_flag_count": float(honeypot_flag_count),
 
-        # Profile quality
         "has_github_link": float(has_github),
         "profile_completeness": float(profile_completeness),
         "endorsement_count": float(endorsements),
@@ -635,36 +670,35 @@ def extract_features(
         "verified_skill_score": float(verified_skill_score),
         "text_blob_word_count": float(len(text_blob.split())),
 
-        # Engagement
         "response_rate": float(response_rate),
         "notice_period_days": float(notice_period),
         "open_to_work": float(open_to_work),
         "interview_completion_rate": float(interview_completion),
         "offer_acceptance_rate": float(offer_acceptance),
 
-        # Education
         "education_level": float(edu_level),
         "education_tier_score": float(best_tier_score),
 
-        # Title & seniority
         "title_seniority": float(title_seniority),
         "role_experience_alignment": float(role_match),
 
-        # Location
         "is_target_location": float(is_target_loc),
-
-        # Production evidence
         "production_evidence": float(prod_score),
 
-        # ---- NEW FEATURES ----
         "is_india_based": float(is_india),
         "is_big_tech": float(is_big_tech),
         "is_consulting": float(is_consulting),
         "has_product_company_experience": float(has_product_exp),
         "ranking_evidence_score": float(ranking_evidence),
         "has_shipped_ranking_system": float(has_shipped_ranking),
-    }
 
+        "is_cv_speech_primary": is_cv_speech_primary,
+        "is_framework_enthusiast": is_framework_enthusiast,
+        "is_title_chaser": is_title_chaser,
+
+        "external_validation_score": float(external_val),
+        "eval_framework_experience": float(eval_framework),
+    }
 
 # ---------------------------------------------------------------------------
 # Public entry point
