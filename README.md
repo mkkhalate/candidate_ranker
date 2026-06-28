@@ -48,8 +48,8 @@ It is designed to be **CPU‑only** and runs entirely offline after a one‑time
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-org/redrob-ranking-engine.git
-cd redrob-ranking-engine
+git clone https://github.com/your-org/candidate-ranker.git
+cd candidate-ranker
 ```
 
 ### 2. Create a virtual environment (optional but recommended)
@@ -114,9 +114,52 @@ pip install -r requirements.txt
 
 Before running the ranking pipeline, you must generate the required model artefacts. This step is **run once** after you have placed your input files in `./input/`.
 
+### 🏃 Speed Path (MiniLM)
+
+**Linux / macOS (Bash):**
 ```bash
-python src/precompute.py --input_dir ./input --models_dir ./models
+export OMP_NUM_THREADS=$(nproc) && export MKL_NUM_THREADS=$(nproc) && python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "all-MiniLM-L6-v2" --embed_batch_size 128
 ```
+
+**Windows (CMD):**
+```cmd
+set OMP_NUM_THREADS=%NUMBER_OF_PROCESSORS%
+set MKL_NUM_THREADS=%NUMBER_OF_PROCESSORS%
+python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "all-MiniLM-L6-v2" --embed_batch_size 128
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:OMP_NUM_THREADS=$env:NUMBER_OF_PROCESSORS
+$env:MKL_NUM_THREADS=$env:NUMBER_OF_PROCESSORS
+python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "all-MiniLM-L6-v2" --embed_batch_size 128
+```
+
+---
+
+### 🎯 Quality Path (BGE)
+
+**Linux / macOS (Bash):**
+```bash
+export OMP_NUM_THREADS=$(nproc) && export MKL_NUM_THREADS=$(nproc) && python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "BAAI/bge-base-en-v1.5" --embed_batch_size 128
+```
+
+**Windows (CMD):**
+```cmd
+set OMP_NUM_THREADS=%NUMBER_OF_PROCESSORS%
+set MKL_NUM_THREADS=%NUMBER_OF_PROCESSORS%
+python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "BAAI/bge-base-en-v1.5" --embed_batch_size 128
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:OMP_NUM_THREADS=$env:NUMBER_OF_PROCESSORS
+$env:MKL_NUM_THREADS=$env:NUMBER_OF_PROCESSORS
+python precompute.py --input_dir ./input --models_dir ./models --embed_model_name "BAAI/bge-base-en-v1.5" --embed_batch_size 128
+```
+Why %NUMBER_OF_PROCESSORS% / $env:NUMBER_OF_PROCESSORS?
+It automatically detects your total logical CPU cores (e.g., 8, 12, 16) – no need to hardcode 8.
+
 
 **What it does:**
 
