@@ -49,7 +49,7 @@ It is designed to be **CPU‑only** and runs entirely offline after a one‑time
 
 ```bash
 git clone https://github.com/mkkhalate/candidate_ranker.git
-cd candidate-ranker
+cd candidate_ranker
 ```
 
 ### 2. Create a virtual environment (optional but recommended)
