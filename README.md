@@ -48,7 +48,7 @@ It is designed to be **CPU‑only** and runs entirely offline after a one‑time
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/mkkhalate/candidate-ranker.git
+git clone https://github.com/mkkhalate/candidate_ranker.git
 cd candidate-ranker
 ```
 
